@@ -28,7 +28,8 @@ void handle_sigTerm(int iSignum)
 int main()
 {
     int socket_fd;
-    struct sockaddr_un sa, sa_client;
+    struct sockaddr_un sa;
+    memset(&sa, '\0', sizeof(struct sockaddr_un));
 
     // segnale per SIGINT e SIGQUIT
     struct sigaction sig_sa;
@@ -48,8 +49,61 @@ int main()
     sigaction(SIGTERM, &sig_term, NULL);
 
     socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
+
     if (socket_fd == -1)
         fatal("Errore while initializing socket");
+
+    sa.sun_family = AF_UNIX;
+    strncpy(sa.sun_path, SOCKET_PATH, sizeof(sa.sun_path) - 1);
+
+    unlink(SOCKET_PATH); // se il server termina per errore, rimuovo il socket prima di avviare la connessione
+
+    if (bind(socket_fd, ((struct sockaddr *)&sa), sizeof(sa)) == -1)
+        fatal("Errore in bind");
+    if (listen(socket_fd, 16) == -1) // 16 è il numero di connessioni massime in sospeso
+        fatal("Errore in listen");
+
+    while (!terminating)
+    {
+        int fd_c = accept(socket_fd, NULL, NULL);
+        if (fd_c == -1)
+        {
+            if (errno == EINTR)
+                continue;
+            fatal("Errore in accept");
+        }
+
+        pid_t pid;
+        pid = fork();
+
+        if (pid < 0)
+        {
+            fatal("Errore in fork");
+        }
+        else if (pid == 0)
+        {
+            close(socket_fd);
+
+            char welcome[BUF_SIZE];
+            snprintf(welcome, sizeof(welcome), "Benvenuto! se connesso all'esecutore con PID %d\n", getpid());
+            write(fd_c, welcome, strlen(welcome));
+
+            printf("[ESECUTORE %d] Connessione gestita, in attesa di comandi...\n", getpid());
+
+            close(fd_c);
+            exit(EXIT_SUCCESS);
+        }
+        else
+        {
+            // server
+            printf("[SERVE] Nuova connessione, creato esecutore PID %d\n", pid);
+            close(fd_c);
+        }
+    }
+
+    printf("[SERVER] Terminazione richiesta, chiudo\n");
+    close(socket_fd);
+    unlink(SOCKET_PATH);
 
     return 0;
 }
