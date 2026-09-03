@@ -85,7 +85,7 @@ int main()
             close(socket_fd);
 
             char welcome[BUF_SIZE];
-            snprintf(welcome, sizeof(welcome), "Benvenuto! se connesso all'esecutore con PID %d\n", getpid());
+            snprintf(welcome, sizeof(welcome), "Benvenuto! sei connesso all'esecutore con PID %d\n", getpid());
             write(fd_c, welcome, strlen(welcome));
 
             printf("[ESECUTORE %d] Connessione gestita, in attesa di comandi...\n", getpid());
@@ -96,7 +96,7 @@ int main()
         else
         {
             // server
-            printf("[SERVE] Nuova connessione, creato esecutore PID %d\n", pid);
+            printf("[SERVER] Nuova connessione, creato esecutore PID %d\n", pid);
             close(fd_c);
         }
     }
