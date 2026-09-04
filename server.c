@@ -25,6 +25,15 @@ void handle_sigTerm(int iSignum)
     terminating = 1;
 }
 
+void handle_sigchld(int sig)
+{
+    int saved_errno = errno;
+
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
+    errno = saved_errno;
+}
+
 int main()
 {
     int socket_fd;
@@ -47,6 +56,12 @@ int main()
 
     sig_term.sa_handler = handle_sigTerm;
     sigaction(SIGTERM, &sig_term, NULL);
+
+    struct sigaction sa_chld;
+    memset(&sa_chld, 0, sizeof(sa_chld));
+    sa_chld.sa_handler = handle_sigchld;
+    sa_chld.sa_flags = SA_RESTART;
+    sigaction(SIGCHLD, &sa_chld, NULL);
 
     socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
 
@@ -82,13 +97,55 @@ int main()
         }
         else if (pid == 0)
         {
-            close(socket_fd);
+            signal(SIGCHLD, SIG_DFL);
 
-            char welcome[BUF_SIZE];
-            snprintf(welcome, sizeof(welcome), "Benvenuto! sei connesso all'esecutore con PID %d\n", getpid());
-            write(fd_c, welcome, strlen(welcome));
+            close(socket_fd); // Chiude il socket di ascolto del server
 
-            printf("[ESECUTORE %d] Connessione gestita, in attesa di comandi...\n", getpid());
+            char buf[BUF_SIZE];
+            ssize_t bytes_read;
+
+            printf("[ESECUTORE %d] Connesso al client, in ascolto...\n", getpid());
+
+            while ((bytes_read = read(fd_c, buf, sizeof(buf) - 1)) > 0)
+            {
+                buf[bytes_read] = '\0';
+
+                buf[strcspn(buf, "\r\n")] = '\0';
+
+                if (strlen(buf) == 0)
+                    continue;
+
+                printf("[ESECUTORE %d] Ricevuto dal client \"%s\"\n", getpid(), buf);
+
+                if (strcmp(buf, "exit") == 0)
+                {
+                    printf("[ESECUTORE %d] Ricevuto 'exit', termino.\n", getpid());
+                    break;
+                }
+
+                // Risposta da mandare al client
+                char response[BUF_SIZE + 32];
+                snprintf(response, sizeof(response), "[ECHO DA ESECUTORE]: %s\n", buf);
+
+                if (write(fd_c, response, strlen(response)) == -1)
+                {
+                    fatal("[ESECUTORE] Errore in write");
+                }
+            }
+
+            if (bytes_read == 0)
+            {
+                printf("[ESECUTORE %d] Il client ha chiuso la connessione.\n", getpid());
+            }
+            else if (bytes_read == -1)
+            {
+                if (errno == EINTR && terminating)
+                    printf("[ESECUTORE %d] Terminazione richiesta dal server, chiudo\n", getpid());
+                else if (errno == EINTR)
+                    printf("[ESECUTORE %d] Interrotto da segnale imprevisto, chiudo comunque\n", getpid());
+                else
+                    fatal("[ESECUTORE] Errore in read");
+            }
 
             close(fd_c);
             exit(EXIT_SUCCESS);
@@ -102,6 +159,16 @@ int main()
     }
 
     printf("[SERVER] Terminazione richiesta, chiudo\n");
+
+    // Ignora SIGTERM per se stesso prima di segnalare il gruppo
+    signal(SIGTERM, SIG_IGN);
+
+    // Invia SIGTERM a tutti i processi del gruppo
+    kill(0, SIGTERM);
+
+    while (wait(NULL) > 0 || errno == EINTR)
+        ;
+
     close(socket_fd);
     unlink(SOCKET_PATH);
 
