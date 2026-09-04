@@ -10,7 +10,7 @@
 #define SOCKET_PATH "/tmp/socket"
 #define BUF_SIZE 2048
 
-void fatal(char *message)
+void fatal(const char *message)
 {
     perror(message);
     exit(EXIT_FAILURE);

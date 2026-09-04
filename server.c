@@ -14,13 +14,13 @@
 
 volatile sig_atomic_t terminating = 0;
 
-void fatal(char *message)
+void fatal(const char *message)
 {
     perror(message);
     exit(EXIT_FAILURE);
 }
 
-void handle_sigTerm(int iSignum)
+void handle_sigTerm(int sig)
 {
     terminating = 1;
 }
@@ -59,6 +59,7 @@ int main()
 
     struct sigaction sa_chld;
     memset(&sa_chld, 0, sizeof(sa_chld));
+
     sa_chld.sa_handler = handle_sigchld;
     sa_chld.sa_flags = SA_RESTART;
     sigaction(SIGCHLD, &sa_chld, NULL);
@@ -71,11 +72,11 @@ int main()
     sa.sun_family = AF_UNIX;
     strncpy(sa.sun_path, SOCKET_PATH, sizeof(sa.sun_path) - 1);
 
-    unlink(SOCKET_PATH); // se il server termina per errore, rimuovo il socket prima di avviare la connessione
+    unlink(SOCKET_PATH); // Rimuove un eventuale socket rimasto da una precedente esecuzione
 
     if (bind(socket_fd, ((struct sockaddr *)&sa), sizeof(sa)) == -1)
         fatal("Errore in bind");
-    if (listen(socket_fd, 16) == -1) // 16 è il numero di connessioni massime in sospeso
+    if (listen(socket_fd, 10) == -1) // 16 è il numero di connessioni massime in sospeso
         fatal("Errore in listen");
 
     while (!terminating)
@@ -93,12 +94,11 @@ int main()
 
         if (pid < 0)
         {
+            close(fd_c);
             fatal("Errore in fork");
         }
         else if (pid == 0)
         {
-            signal(SIGCHLD, SIG_DFL);
-
             close(socket_fd); // Chiude il socket di ascolto del server
 
             char buf[BUF_SIZE];
