@@ -9,7 +9,6 @@
 
 #define SOCKET_PATH "/tmp/socket"
 #define BUF_SIZE 2048
-#define DELIMITER "\n---FINE_COMANDO---\n"
 
 void fatal(const char *message)
 {
@@ -17,48 +16,64 @@ void fatal(const char *message)
     exit(EXIT_FAILURE);
 }
 
+int write_all(int fd, const char *buf, size_t len)
+{
+    size_t sent = 0;
+
+    while (sent < len)
+    {
+        ssize_t n = write(fd, buf + sent, len - sent);
+
+        if (n > 0)
+            sent += (size_t)n;
+        else if (n == -1 && errno == EINTR)
+            continue;
+        else
+            return -1;
+    }
+
+    return 0;
+}
+
 int main()
 {
-    // Ignora segnali SIGINT, SIGQUIT e SIGPIPE come da specifiche
+    /* Client ed esecutore devono ignorare SIGINT e SIGQUIT. */
     struct sigaction sig_sa;
-    memset(&sig_sa, '\0', sizeof(struct sigaction));
+    memset(&sig_sa, 0, sizeof(sig_sa));
     sig_sa.sa_handler = SIG_IGN;
 
     if (sigaction(SIGINT, &sig_sa, NULL) == -1 ||
         sigaction(SIGQUIT, &sig_sa, NULL) == -1 ||
-        sigaction(SIGPIPE, &sig_sa, NULL) == -1 ||
-        sigaction(SIGTERM, &sig_sa, NULL) == -1)
+        sigaction(SIGPIPE, &sig_sa, NULL) == -1)
     {
         fatal("Errore configurazione segnali");
     }
 
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (socket_fd == -1)
-        fatal("Errore nell'inizializzazione del socket");
+        fatal("Errore inizializzazione socket");
 
     struct sockaddr_un sa;
-    memset(&sa, '\0', sizeof(struct sockaddr_un));
+    memset(&sa, 0, sizeof(sa));
     sa.sun_family = AF_UNIX;
     strncpy(sa.sun_path, SOCKET_PATH, sizeof(sa.sun_path) - 1);
 
     if (connect(socket_fd, (struct sockaddr *)&sa, sizeof(sa)) == -1)
-        fatal("Errore nella connessione al server/esecutore");
+        fatal("Errore nella connessione");
 
     char send_buf[BUF_SIZE];
-    char recv_buf[BUF_SIZE];
 
     while (1)
     {
         printf("\nInserisci comando ('exit' per USCIRE): ");
         fflush(stdout);
 
-        // Gestione EOF (ctrl+d)
         if (fgets(send_buf, sizeof(send_buf), stdin) == NULL)
         {
             if (feof(stdin))
             {
-                clearerr(stdin); // resetto l'indicatore di EOF
-                printf("\n[CLIENT] Uscita consentità solo digitando 'exit'.\n");
+                printf("\n[CLIENT] Inserire 'exit' per terminare.\n");
+                clearerr(stdin);
                 continue;
             }
 
@@ -68,72 +83,87 @@ int main()
             fatal("[CLIENT] Errore in fgets");
         }
 
-        // Rimuove terminatori di riga
         send_buf[strcspn(send_buf, "\r\n")] = '\0';
 
-        // Verifica che la riga non sia vuota o composta solo da spazi/tab
+        if (send_buf[0] == '\0')
+            continue;
+
         int solo_spazi = 1;
-        for (int j = 0; send_buf[j] != '\0'; j++)
+
+        for (int i = 0; send_buf[i] != '\0'; i++)
         {
-            if (send_buf[j] != ' ' && send_buf[j] != '\t')
+            if (send_buf[i] != ' ' && send_buf[i] != '\t')
             {
                 solo_spazi = 0;
                 break;
             }
         }
+
         if (solo_spazi)
             continue;
 
-        // Invio comando all'esecutore
-        if (write(socket_fd, send_buf, strlen(send_buf)) == -1)
+        if (write_all(socket_fd, send_buf, strlen(send_buf)) == -1)
         {
             if (errno == EPIPE)
             {
                 printf("[CLIENT] L'esecutore ha chiuso la connessione.\n");
                 break;
             }
+
             fatal("[CLIENT] Errore invio comando");
         }
 
-        // Se l'utente digita 'exit', termina localmente dopo l'invio
         if (strcmp(send_buf, "exit") == 0)
         {
             printf("[CLIENT] Chiusura in corso...\n");
             break;
         }
 
-        // Ciclo di lettura della risposta fino al marcatore di fine output
+        /*
+         * L'esecutore invia l'output seguito dal delimitatore.
+         * Non assumiamo che una singola read() contenga tutta la risposta.
+         */
+        const char *delimiter = "---FINE_COMANDO---\n";
+        size_t delimiter_len = strlen(delimiter);
+        size_t matched = 0;
+        char c;
+
         while (1)
         {
-            ssize_t n = read(socket_fd, recv_buf, sizeof(recv_buf) - 1);
-            if (n > 0)
-            {
-                recv_buf[n] = '\0';
+            ssize_t n = read(socket_fd, &c, 1);
 
-                // Ricerca del delimitatore di fine comando
-                char *delim_pos = strstr(recv_buf, DELIMITER);
-                if (delim_pos != NULL)
-                {
-                    *delim_pos = '\0'; // Rimuove il marcatore prima della visualizzazione
-                    printf("%s", recv_buf);
-                    fflush(stdout);
-                    break;
-                }
-
-                printf("%s", recv_buf);
-                fflush(stdout);
-            }
-            else if (n == 0)
+            if (n == 0)
             {
                 printf("[CLIENT] L'esecutore ha chiuso la connessione.\n");
                 close(socket_fd);
                 return 0;
             }
-            else
+
+            if (n == -1)
             {
                 if (errno == EINTR)
                     continue;
-                fatal("[CLIENT] Errore nella lettura risposta");
+
+                fatal("[CLIENT] Errore lettura risposta");
+            }
+
+            if (c == delimiter[matched])
+            {
+                matched++;
+
+                if (matched == delimiter_len)
+                    break;
+            }
+            else
+            {
+                if (matched > 0)
+                {
+                    fwrite(delimiter, 1, matched, stdout);
+                    matched = 0;
+                }
+
+                putchar(c);
+                fflush(stdout);
             }
         }
     }

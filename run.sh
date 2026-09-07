@@ -1,7 +1,7 @@
 #!/bin/bash
 
-gcc -Wall server.c -o server || { echo "Errore compilazione server"; exit 1; }
-gcc -Wall client.c -o client || { echo "Errore compilazione client"; exit 1; }
+gcc -Wall -Wextra server.c -o server || { echo "Errore compilazione server"; exit 1; }
+gcc -Wall -Wextra client.c -o client || { echo "Errore compilazione client"; exit 1; }
 
 echo "[BUILD] Compilazione completata con successo"
 
