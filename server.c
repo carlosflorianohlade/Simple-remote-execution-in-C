@@ -38,6 +38,9 @@ void handle_sigchld(int sig)
 
 int main()
 {
+    // Rende il server leader di un nuovo process group indipendente
+    setpgid(0, 0);
+
     int socket_fd;
     struct sockaddr_un sa;
     memset(&sa, '\0', sizeof(struct sockaddr_un));

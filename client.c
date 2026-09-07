@@ -26,7 +26,8 @@ int main()
 
     if (sigaction(SIGINT, &sig_sa, NULL) == -1 ||
         sigaction(SIGQUIT, &sig_sa, NULL) == -1 ||
-        sigaction(SIGPIPE, &sig_sa, NULL) == -1)
+        sigaction(SIGPIPE, &sig_sa, NULL) == -1 ||
+        sigaction(SIGTERM, &sig_sa, NULL) == -1)
     {
         fatal("Errore configurazione segnali");
     }
@@ -51,12 +52,20 @@ int main()
         printf("\nInserisci comando ('exit' per USCIRE): ");
         fflush(stdout);
 
-        // Gestione fine file (CTRL+D)
+        // Gestione EOF (ctrl+d)
         if (fgets(send_buf, sizeof(send_buf), stdin) == NULL)
         {
-            printf("\nRilevato EOF. Invio 'exit' all'esecutore...\n");
-            write(socket_fd, "exit", 4);
-            break;
+            if (feof(stdin))
+            {
+                clearerr(stdin); // resetto l'indicatore di EOF
+                printf("\n[CLIENT] Uscita consentità solo digitando 'exit'.\n");
+                continue;
+            }
+
+            if (errno == EINTR)
+                continue;
+
+            fatal("[CLIENT] Errore in fgets");
         }
 
         // Rimuove terminatori di riga
