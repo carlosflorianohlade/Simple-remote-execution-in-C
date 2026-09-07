@@ -237,14 +237,12 @@ int main()
             }
             else if (terminating)
             {
-                printf("[ESECUTORE %d] Terminazione richiesta dal server.\n",
-                       getpid());
+                printf("[ESECUTORE %d] Terminazione richiesta dal server.\n", getpid());
             }
             else if (bytes_read == -1)
             {
                 if (errno == EINTR && terminating)
-                    printf("[ESECUTORE %d] Terminazione richiesta dal server.\n",
-                           getpid());
+                    printf("[ESECUTORE %d] Terminazione richiesta dal server.\n", getpid());
                 else
                     perror("[ESECUTORE] Errore in read");
             }
