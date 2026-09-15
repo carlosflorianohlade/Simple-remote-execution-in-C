@@ -145,11 +145,9 @@ int main()
             char buf[BUF_SIZE];
             ssize_t bytes_read = -1;
 
-            printf("[ESECUTORE %d] Connesso al client, in ascolto...\n",
-                   getpid());
+            printf("[ESECUTORE %d] Connesso al client, in ascolto...\n", getpid());
 
-            while (!terminating &&
-                   (bytes_read = read(fd_c, buf, sizeof(buf) - 1)) > 0)
+            while (!terminating && (bytes_read = read(fd_c, buf, sizeof(buf) - 1)) > 0)
             {
                 buf[bytes_read] = '\0';
 
@@ -171,8 +169,7 @@ int main()
 
                 if (strcmp(args[0], "exit") == 0)
                 {
-                    printf("[ESECUTORE %d] Ricevuto 'exit', chiusura.\n",
-                           getpid());
+                    printf("[ESECUTORE %d] Ricevuto 'exit', chiusura.\n", getpid());
                     break;
                 }
 
